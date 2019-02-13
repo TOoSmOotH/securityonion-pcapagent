@@ -99,7 +99,7 @@ def addjob(sensor,stenoquery):
         print('Query Failed: %s\nError: %s' % (thequery, str(err)))
 
 
-def getconn(connid):
+def getconn(esid):
     # Connect to Elastic and get information about the connection.
     esserver = config["esserver"]
     es = Elasticsearch(esserver)
