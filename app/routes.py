@@ -199,7 +199,7 @@ def getconn(connid):
               epochminus = int(epochtimestamp - int(duration) - 120)
               epochplus = int(epochtimestamp + int(duration) + 120)
               pcapbefore = datetime.utcfromtimestamp(epochminus).strftime('%Y-%m-%dT%H:%M:%S:%fZ')
-              pcapafter = datetime.utcfromtimestamp(epochminus).strftime('%Y-%m-%dT%H:%M:%S:%fZ')
+              pcapafter = datetime.utcfromtimestamp(epochplus).strftime('%Y-%m-%dT%H:%M:%S:%fZ')
               sensor = result[key]['_source']['sensor_name']
               stenoquery = "before %s and after %s and host %s and host %s and port %s and port %s" % (pcapbefore, pcapafter, src, dst, srcport, dstport)
               return [sensor, stenoquery]
