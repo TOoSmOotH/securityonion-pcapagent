@@ -99,7 +99,7 @@ def addjob(sensor,stenoquery):
         print('Query Failed: %s\nError: %s' % (thequery, str(err)))
 
 
-def getconn(connid):
+def getconn(esid):
     # Connect to Elastic and get information about the connection.
     esserver = config["esserver"]
     es = Elasticsearch(esserver)
@@ -164,25 +164,46 @@ def getconn(connid):
             query = '{"query": {"bool": {"must": [{"query_string": {"query": "' + str(query_string) + '","analyze_wildcard": true}},{"range": {"@timestamp":{ "gte": "' + str(st_es) + '", "lte": "' + str(et_es) + '", "format": "epoch_millis"}}}]}}}'
             # Search for a Bro connection log
             search = es.search(index="*:logstash-*", doc_type="doc", body=query)
+            # Gather our total number of query matches
             hits = search['hits']['total']
+            # Create dict to store match/timestamp delta
+            delta_dict = {}
             if hits > 0:
-                for result in search['hits']['hits']:
-                    # Build the rest of the query for Steno
-                    src = result['_source']['source_ip']
-                    dst = result['_source']['destination_ip']
-                    srcport = result['_source']['source_port']
-                    dstport = result['_source']['destination_port']
-                    duration = result['_source']['duration']
-                    estimestamp = datetime.strptime(result['_source']['@timestamp'],"%Y-%m-%dT%H:%M:%S.%fZ")
-                    epochtimestamp = mktime(estimestamp.timetuple())
-                    epochminus = int(epochtimestamp - int(duration) - 120)
-                    epochplus = int(epochtimestamp + int(duration) + 120)
-                    pcapbefore = datetime.utcfromtimestamp(epochminus).strftime('%Y-%m-%dT%H:%M:%S:%fZ')
-                    pcapafter = datetime.utcfromtimestamp(epochminus).strftime('%Y-%m-%dT%H:%M:%S:%fZ')
-                    sensor = result['_source']['sensor_name']
-                    stenoquery = "before %s and after %s and host %s and host %s and port %s and port %s" % (pcapbefore, pcapafter, src, dst, srcport, dstport)
-                    return [sensor, stenoquery]
-                    #print sensor,stenoquery
+              i = 0
+              while i < hits:
+                # Compare timestamps to determine delta
+                precleanstamp = datetime.strptime(search['hits']['hits'][i]['_source']['@timestamp'],"%Y-%m-%dT%H:%M:%S.%fZ")
+                record_ts = mktime(precleanstamp.timetuple())
+                if epochtimestamp > record_ts:
+                  delta = epochtimestamp - record_ts
+                elif epochtimestamp < record_ts:
+                  delta = record_ts - epochtimestamp
+                else:
+                   delta = 0
+                # Add timestamp delta to dict
+                delta_dict.update({i: delta})
+                i=i+1
+
+              # Get the key for the smallest delta value, so we can use to select the
+              # appropriate record to use when pulling PCAP
+              key = int(min(delta_dict, key=delta_dict.get))
+              result = search['hits']['hits']
+              # Build the rest of the query for Steno from our connection logs values
+              src = result[key]['_source']['source_ip']
+              dst = result[key]['_source']['destination_ip']
+              srcport = result[key]['_source']['source_port']
+              dstport = result[key]['_source']['destination_port']
+              duration = result[key]['_source']['duration']
+              estimestamp = datetime.strptime(result[key]['_source']['@timestamp'],"%Y-%m-%dT%H:%M:%S.%fZ")
+              epochtimestamp = mktime(estimestamp.timetuple())
+              epochminus = int(epochtimestamp - int(duration) - 120)
+              epochplus = int(epochtimestamp + int(duration) + 120)
+              pcapbefore = datetime.utcfromtimestamp(epochminus).strftime('%Y-%m-%dT%H:%M:%S:%fZ')
+              pcapafter = datetime.utcfromtimestamp(epochplus).strftime('%Y-%m-%dT%H:%M:%S:%fZ')
+              sensor = result[key]['_source']['sensor_name']
+              stenoquery = "before %s and after %s and host %s and host %s and port %s and port %s" % (pcapbefore, pcapafter, src, dst, srcport, dstport)
+              return [sensor, stenoquery]
+              #print sensor,stenoquery
             else:
                print("No hits for second query!")
     else:
